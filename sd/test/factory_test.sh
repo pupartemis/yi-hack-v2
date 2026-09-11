@@ -10,14 +10,26 @@ if [ $# -eq 0 ]; then
    exit $?
 fi
 
-# Export all variables available in yi-hack-v2.cfg
+# Export the supported variables from yi-hack-v2.cfg.
 if [ -f /sdcard/test/yi-hack-v2.cfg ]; then
    echo "### Export variables ... ###"
    while read assignment; do
-      if [ "${assignment:0:8}" = "YI_HACK_" ]; then
-         echo -e "export \"$assignment\""
-         export "$assignment"
-      fi
+      case "$assignment" in
+         ''|'#'*) continue ;;
+         YI_HACK_*=*)
+            key=${assignment%%=*}
+            value=${assignment#*=}
+            case "$key" in
+               YI_HACK_STARTUP_MODE|YI_HACK_LANGUAGE|YI_HACK_TELNET_SERVER|\
+               YI_HACK_FTP_SERVER|YI_HACK_HTTP_SERVER|YI_HACK_HTTP_PORT|\
+               YI_HACK_TIME_TIMEZONE|YI_HACK_TIME_FORMAT|YI_HACK_PROXY|\
+               YI_HACK_NATIVE_TRACES)
+                  export "$key=$value" ;;
+               *) echo "Ignoring unsupported configuration key: $key" ;;
+            esac
+            ;;
+         *) echo "Ignoring malformed configuration line: $assignment" ;;
+      esac
    done < /sdcard/test/yi-hack-v2.cfg
    echo
 fi
@@ -48,6 +60,16 @@ fi
 # Mount config
 mkdir -p /mnt/cfg
 mount -t jffs2 /dev/mtdblock8 /mnt/cfg
+
+# Launch the optional status and snapshot web interface before the camera
+# startup script, because the modified encoder startup may stay in foreground.
+if [ "$YI_HACK_HTTP_SERVER" = "YES" ]; then
+   if [ -x /sdcard/test/web/start_http.sh ]; then
+      /sdcard/test/web/start_http.sh
+   else
+      echo "Error: web server launcher is not available"
+   fi
+fi
 
 # Launch expected startup
 if [ "$YI_HACK_STARTUP_MODE" = "MODIFIED" ]; then

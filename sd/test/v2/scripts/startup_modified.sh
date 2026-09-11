@@ -2,6 +2,12 @@
 
 echo "### MODIFIED startup ... ###"
 
+LOG=/sdcard/test/logs/modified_startup.log
+mkdir -p /sdcard/test/logs
+exec >> "$LOG" 2>&1
+set -x
+echo "=== modified startup: `date` ==="
+
 # Copy wpa_supplicant.conf
 if [ -f /sdcard/test/wpa_supplicant.conf ]; then
    mkdir -p /tmp/config
@@ -11,37 +17,19 @@ else
    exit
 fi
 
-# Wifi
+# Wi-Fi. Reuse the stock initialization path because it handles the USB
+# gadget state, calibration/MAC setup, and module loading for this camera.
+/bak/usr/local/bin/usb_wifi.sh
+WIFI_STATUS=$?
+echo "usb_wifi status=$WIFI_STATUS"
+ifconfig -a
+if [ "$WIFI_STATUS" = 1 ]; then
+   echo "Error: USB Wi-Fi initialization detected a connected USB host"
+   exit 1
+fi
 
-# USB 2.0 'Enhanced' Host Controller (EHCI) Driver
-modprobe ehci-hcd
-# Ambarella USB Device Controller Gadget
-modprobe ambarella_udc
-# Mass Storage Gadget
-modprobe g_mass_storage file=/dev/mmcblk0p1 stall=0 removable=1
-
-echo device > /proc/ambarella/usbphy0
-
-sleep 1s
-/usr/local/bin/amba_debug -g 26 -d 0x1
-sleep 2s
-
-echo host > /proc/ambarella/usbphy0
-
-# M-WLAN MLAN Driver
-modprobe mlan
-# M-WLAN Driver
-modprobe usb8801
-sleep 2
-ifconfig mlan0 up
-
-# Set wifi wmm
-/lib/firmware/mrvl/mlanutl mlan0 wmmparamcfg 0 2 3 2 150  1 2 3 2 150  2 2 3 2 150  3 2 3 2 150
-/lib/firmware/mrvl/mlanutl mlan0 macctrl 0x13
-/lib/firmware/mrvl/mlanutl mlan0 psmode 0
-
-# Set wifi countrycode
-/lib/firmware/mrvl/mlanutl mlan0 countrycode CN
+# Match the stock startup workaround before associating with the access point.
+/usr/local/bin/amba_debug -g 51 -d 0x1
 
 # Init led
 /sdcard/test/v2/scripts/led.sh red init     
@@ -55,8 +43,15 @@ ifconfig mlan0 up
 
 # Connect to wifi
 wifi_auto.sh
+WIFI_STATUS=$?
+echo "wifi_auto status=$WIFI_STATUS"
+ifconfig -a
+echo "--- ip.conf ---"
+cat /tmp/config/ip.conf 2>&1
+echo "--- wpa_supplicant.log ---"
+tail -100 /tmp/wpa_supplicant.log 2>&1
 
-if [ $? != 0 ]; then
+if [ "$WIFI_STATUS" != 0 ]; then
    # Turn off blue led and turn on red led, wifi is KO
    /sdcard/test/v2/scripts/led.sh blue off
    /sdcard/test/v2/scripts/led.sh red on
@@ -76,4 +71,3 @@ modprobe mn34220pl bus_addr=0x36
 /usr/local/bin/rtsp_server &
 /usr/local/bin/test_encode -A -h 1080p -e --bitrate 1200000
 /usr/local/bin/test_encode -B -e
-

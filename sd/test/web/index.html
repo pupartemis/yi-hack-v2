@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yi Hack v2</title>
+  <style>
+    body { font: 16px sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }
+    img { max-width: 100%; border: 1px solid #ccc; }
+    button { padding: .5rem .8rem; margin-right: .5rem; }
+    pre { background: #f4f4f4; padding: 1rem; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Yi Hack v2</h1>
+  <p><button onclick="refreshStatus()">Refresh status</button>
+     <button onclick="reboot()">Reboot camera</button></p>
+  <pre id="status">Loading...</pre>
+  <h2>Snapshot</h2>
+  <p><button onclick="refreshSnapshot()">Capture</button></p>
+  <img id="snapshot" alt="Camera snapshot">
+  <script>
+    function refreshStatus() {
+      fetch('cgi-bin/status.sh').then(function (r) { return r.text(); })
+        .then(function (text) { document.getElementById('status').textContent = text; });
+    }
+    function refreshSnapshot() {
+      document.getElementById('snapshot').src = 'cgi-bin/snapshot.sh?t=' + Date.now();
+    }
+    function reboot() {
+      if (confirm('Reboot the camera?')) {
+        fetch('cgi-bin/reboot.sh', { method: 'POST' })
+          .then(function (r) { alert(r.ok ? 'Reboot requested.' : 'Reboot failed.'); });
+      }
+    }
+    refreshStatus();
+    refreshSnapshot();
+  </script>
+</body>
+</html>

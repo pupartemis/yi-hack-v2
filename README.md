@@ -109,6 +109,20 @@ The FTP server is on port 21.
 
 No authentication is needed, you can use anonymous user.
 
+Web interface
+-------------
+
+The v2-compatible status and snapshot page is disabled by default. To enable
+it, set `YI_HACK_HTTP_SERVER=YES` in `test/yi-hack-v2.cfg`, then restart the
+camera. Open `http://<camera-ip>/` (or the configured `YI_HACK_HTTP_PORT`) in
+a browser. The page displays basic status, captures a JPEG snapshot, and
+provides an optional reboot action.
+
+The camera firmware must provide a compatible `httpd` executable. Startup
+reports an error in `/tmp/yi-hack-httpd.log` if it cannot find one. This
+initial interface is intentionally small and does not expose camera
+configuration or firmware update operations.
+
 RTSP server
 -----------
 To activate the RTSP server, you need to modify **test/yi-hack-v2.cfg** and uncomment the line YI\_HACK\_STARTUP\_MODE=MODIFIED
@@ -175,4 +189,3 @@ factory_test.sh
 ---------------
 
 **TODO**
-
