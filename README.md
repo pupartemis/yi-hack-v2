@@ -1,4 +1,4 @@
-THIS PROJECT IS OUTDATED AND NOT MAINTAINED ANYMORE
+This project is outdated and not actively maintained.
 ===============
 
 yi-hack-v2 project
@@ -24,17 +24,19 @@ This camera has the default following features :
 * local video storage on a SD card
 * no RTSP server
 
-This hack includes :
+This hack includes:
 * Base firmware : 2.1.1_20160429113900
 * Telnet server activated
 * FTP server activated
 * Ability to make a "China only" camera work outside China
 * Ability to choose voice between Chinese, English and French
 * Ability to choose timezone and format of date/time embedded in the video
+* Modified startup mode with local RTSP streaming
+* Optional local status and snapshot web interface
 
-In early alpha stage :
-* Ability to disable Chinese cloud
-* Ability to activate RTSP server
+The modified startup mode disables the official Xiaomi application/cloud
+startup and provides local RTSP streams for applications such as Frigate and
+Home Assistant.
 
 Warning about some models that are usable only in China
 =======================================================
@@ -59,9 +61,9 @@ The memory card must stay in the camera ! If you remove it, the camera will star
 Prepare the memory card
 -----------------------
 
-Clone this repository on a computer :
+Clone this repository on a computer:
 
-    git clone http://github.com/niclet/yi-hack-v2.git
+    git clone https://github.com/pupartemis/yi-hack-v2.git
     
 Then, format a micro SD card in fat32 (vfat) format and copy the content of the **yi-hack-v2/sd/** folder at the root of your memory card.
 
@@ -100,7 +102,8 @@ Telnet server
 
 The telnet server is on port 23.
 
-No authentication is needed, default user is root.
+No authentication is needed; the default user is root. Only enable this on an
+isolated trusted network.
 
 FTP server
 ----------
@@ -109,27 +112,29 @@ The FTP server is on port 21.
 
 No authentication is needed, you can use anonymous user.
 
-Web interface
--------------
+Modified startup and RTSP
+-------------------------
 
-The v2-compatible status and snapshot page is disabled by default. To enable
-it, set `YI_HACK_HTTP_SERVER=YES` in `test/yi-hack-v2.cfg`, then restart the
-camera. Open `http://<camera-ip>/` (or the configured `YI_HACK_HTTP_PORT`) in
-a browser. The page displays basic status, captures a JPEG snapshot, and
-provides an optional reboot action.
+The tested modified startup mode uses the camera's local Wi-Fi configuration,
+starts the camera encoder and exposes two local RTSP streams. To use it,
+configure **test/wpa_supplicant.conf** with the camera's Wi-Fi network, then
+set this in **test/yi-hack-v2.cfg**:
 
-The camera firmware must provide a compatible `httpd` executable. Startup
-reports an error in `/tmp/yi-hack-httpd.log` if it cannot find one. This
-initial interface is intentionally small and does not expose camera
-configuration or firmware update operations.
+    YI_HACK_STARTUP_MODE=MODIFIED
 
-RTSP server
------------
-To activate the RTSP server, you need to modify **test/yi-hack-v2.cfg** and uncomment the line YI\_HACK\_STARTUP\_MODE=MODIFIED
+The modified mode does not start the official Xiaomi application/cloud
+processes. The tested stream URLs are:
+
+    rtsp://<IP>/stream1
+    rtsp://<IP>/stream2
+
+For Frigate, use `stream1` for the main stream and `stream2` for the
+secondary/lower-resolution stream as appropriate for your setup.
 
 You must also modify **test/wpa_supplicant.conf** to be compliant with your own wifi network.
 
-Please note that when you activate RTSP server, you can't use your mobile app anymore.
+Please note that modified startup is not compatible with the official mobile
+app workflow.
 
 During camera startup, the led will indicate the current status :
 * yellow : camera startup
@@ -143,18 +148,30 @@ A secondary MJPEG stream is also available from rtsp://\<IP\>/stream2
 
 Following **hostmit** suggestion, you can now use **test/v2/scripts/capture.sh** to capture a single frame as a JPG file.
 
+Web interface
+-------------
+
+The v2-compatible status and snapshot interface is enabled in the example
+configuration with:
+
+    YI_HACK_HTTP_SERVER=YES
+    YI_HACK_HTTP_PORT=8080
+
+The camera's stock HTTP service already uses port 80, so the Yi Hack
+interface is normally available at:
+
+    http://<IP>:8080/
+
+It provides basic status information, a live JPEG snapshot, and an optional
+reboot action. It does not expose camera configuration or firmware-update
+operations. The camera firmware must provide a compatible `httpd` executable;
+startup reports an error in `/tmp/yi-hack-httpd.log` if it cannot find one.
+
 
 I want more !
 =============
 
 For now, it is just a kind of proof of concept. Many work has still to be done.
-
-Coming soon !
-=============
-
-Connection to wifi without Android app is in progress.
-RTSP server is also in progress, this will be the more important and difficult part.
-
 
 How it works ?
 ==============
