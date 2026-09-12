@@ -8,6 +8,7 @@ keys, or other credentials here.
 ## Project and target
 
 - Repository: `pupartemis/yi-hack-v2`
+- Upstream fork source: `niclet/yi-hack-v2`
 - Local project path used during development:
   `/Users/jan/Desktop/yihack2/yi-hack-v2`
 - Target: Xiaomi Yi Ants Camera 2 / H21 platform

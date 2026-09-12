@@ -9,6 +9,9 @@ Frigate and Home Assistant.
 Special thanks to **fritz-smh** for the original yi-hack project:
 https://github.com/fritz-smh/yi-hack
 
+This repository was forked from **niclet/yi-hack-v2**:
+https://github.com/niclet/yi-hack-v2
+
 ## What this project provides
 
 The modified startup mode:
