@@ -187,8 +187,8 @@ Settings behavior:
 - The settings handler uses simple form parsing suitable for the firmware's
   BusyBox environment; do not assume modern shell utilities exist.
 
-There is deliberately no audio checkbox yet because the current RTSP server
-cannot publish audio.
+Audio is now available through a separate, opt-in RTSP service; the existing
+video RTSP server remains unchanged.
 
 ## Audio findings and future implementation
 
@@ -210,17 +210,126 @@ However:
 - yi-hack-v5 contains an audio design, but its binaries and shared-memory
   offsets are for different camera platforms and cannot be copied directly.
 
-Future audio work should:
+The working deployment uses a separate PCMA RTSP stream:
 
-1. Determine whether H21 audio is best captured from ALSA or the stock shared
-   memory/video buffer.
-2. Produce valid AAC/ADTS frames.
-3. Build an ARM-compatible FIFO/audio producer.
-4. Extend or replace the v2 RTSP server with an AAC RTP track.
-5. Add a real `YI_HACK_AUDIO_SERVER` setting only after end-to-end testing.
-6. Verify go2rtc, Frigate, VLC, and ffprobe compatibility.
+```text
+rtsp://<camera-ip>:8555/audio
+```
+
+go2rtc can combine it with the existing video stream using a second source
+with `#media=audio`. This has been validated end to end with the live camera.
 
 Do not implement a UI-only audio setting.
+
+The repository now includes `sd/test/v2/scripts/audio_probe.sh`. It performs
+read-only ALSA/firmware checks by default, and `--init` explicitly runs the
+firmware's `set_audio.sh` codec setup. It does not start `/home/web/ipc`,
+because that is the full stock application process and is not a safe audio
+producer for modified startup. The live H21 checks confirmed:
+
+- ARMv7 Ambarella S2L kernel.
+- ALSA capture devices `pcmC0D0c` and `pcmC0D1c`.
+- `snd_soc_alc5633`, `snd_soc_ambarella_i2s`, `snd_pcm`, and related modules.
+- No `arecord`, FFmpeg, GStreamer, or standalone AAC utility.
+- AAC encoder and ALSA code embedded in `/home/web/ipc`.
+- No audio support in `/usr/local/bin/rtsp_server`.
+
+The first native diagnostic source is
+`sd/test/v2/audio/alsa_probe.c`. It tests both ALSA capture devices with
+`S16_LE` at 48 kHz for mono and stereo and reads a short PCM block. Its
+`Makefile` expects an `arm-linux-gnueabihf-gcc` toolchain and `libasound`
+development files. The current macOS host has no ARM Linux toolchain, and the
+camera has no compiler or ALSA headers, so the source is ready but the binary
+cannot yet be built or deployed from this host.
+
+An ARM binary was subsequently built using Clang plus the camera's extracted
+ARM `libasound.so.2`/libc runtime and deployed temporarily to the camera. It
+confirmed the microphone profile: `hw:0,0`, stereo, `S16_LE`, 48 kHz, with 480
+PCM frames readable. Mono was rejected with ALSA `EINVAL`. The diagnostic
+process reports a shutdown-time segmentation fault after the successful read,
+
+Static analysis of the stock IPC ALSA path adds these details:
+
+- The capture setup uses `snd_pcm_open("default", ..., SND_PCM_NONBLOCK=0)`.
+- It selects interleaved access (`SND_PCM_ACCESS_RW_INTERLEAVED`).
+- The stock format selector maps to `S16_LE` for the active profile.
+- The stock configuration stores a 48 kHz rate and one channel before calling
+  `snd_pcm_hw_params_set_channels`; the standalone hardware probe showed that
+  this firmware's active microphone path accepts stereo and rejects mono, so
+  the eventual producer must validate the channel choice at runtime.
+- The setup obtains the maximum buffer time, derives a period time, applies
+  near-period and near-buffer settings, then reads the negotiated period and
+  buffer sizes. It sets the software available minimum to the period size and
+  allocates `period_size * bytes_per_sample` bytes for each capture operation.
+- The read path uses `snd_pcm_readi` and contains explicit ALSA status/XRUN
+  recovery handling.
+
+The stock binary does not expose a reusable AAC API or an isolated audio
+process. Its AAC encoder and ring-buffer code are internal to the full IPC
+application, so launching `/home/web/ipc` in modified startup remains unsafe.
+
+The implemented audio path is a standalone PCMA producer:
+
+- Captures stereo `S16_LE` at 48 kHz from the confirmed `hw:0,0` device.
+- Downmixes stereo to mono and decimates by six to 8 kHz.
+- Encodes G.711 A-law without an external codec library.
+- Emits raw PCMA in real time, in 160-byte/20 ms blocks suitable for
+  `PCMA/8000` RTP.
+- Is started by modified startup only when
+  `YI_HACK_AUDIO_RTSP_SERVER=YES`.
+
+The separate audio RTSP path is now implemented as
+`sd/test/v2/audio/audio_rtsp_server.c`:
+
+- Listens for RTSP control on TCP port 8555.
+- Advertises `PCMA/8000` as RTP payload type 8 at `/audio`.
+- Accepts one UDP RTP client using the port from the RTSP `SETUP` request.
+- Captures and packetizes 20 ms audio blocks from the H21 microphone.
+- Is gated by `YI_HACK_AUDIO_RTSP_SERVER`, which defaults to `NO`.
+- Does not modify or replace the existing video RTSP server.
+
+This first server is intentionally minimal: UDP RTP only, one client, and no
+RTSP-over-TCP interleaving. It is ARM-built against the camera's GLIBC 2.18
+runtime and has been validated on the live camera with RTSP control and
+160-byte PCMA RTP packets.
+
+Audio follow-up work:
+
+- Replace simple six-to-one decimation with a proper low-pass
+  filter/resampler.
+- Handle all recoverable ALSA errors.
+- Add RTSP-over-TCP interleaving, multiple clients, robust session parsing,
+  accurate SDP addressing, a watchdog, and clean shutdown.
+- Optionally add PCMU support.
+- Consider AAC only if PCMA's bandwidth or quality becomes insufficient.
+- Add audio levels, mute, event recording, sound detection, and investigate
+  two-way audio if a speaker path exists.
+
+## IR and night vision investigation
+
+The firmware contains evidence of stock night-mode functionality, including
+`ircut`, `daynight_mode`, `day2night_`, `COMM_EVENT_DAYNIGHT_N2D3_`, and
+`mn34220pl_aliso_adj_param_night.bin`. The platform also exposes an
+`e8006000.ir` device, but this appears to be an infrared input/receiver device
+and is not yet proven to control the IR illuminator.
+
+The currently exported GPIOs 33, 38, and 46 must not be toggled blindly. A
+safe implementation plan is:
+
+1. Locate stock day/night and IR-cut control calls in `home.bin` and
+   `/home/web/ipc`.
+2. Identify the IR-cut filter and illuminator interfaces.
+3. Determine whether control uses GPIO, PWM, a kernel driver, or another
+   firmware device.
+4. Add read-only day/night status detection.
+5. Add explicit day, night, and auto controls.
+6. Expose `YI_HACK_NIGHT_MODE=AUTO` and web controls only after pin behavior is
+   verified.
+
+Candidate GPIO testing must be reversible and isolated because the pins may
+   affect the sensor, status LEDs, Wi-Fi, or boot behavior.
+but the negotiated hardware parameters and PCM read are valid; the binary is
+not part of the runtime startup path.
 
 ## Diagnostics and failure modes
 

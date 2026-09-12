@@ -187,6 +187,69 @@ The camera streams currently contain video only. The microphone hardware and
 AAC-related stock firmware components exist, but the custom v2 RTSP server
 does not advertise or send an audio track.
 
+### H21 audio bring-up
+
+The camera has ALSA capture devices and the stock firmware contains an AAC
+encoder inside `/home/web/ipc`. The modified startup does not run that process,
+and `/usr/local/bin/rtsp_server` is video-only. The payload therefore does not
+enable an audio setting or advertise an incomplete stream.
+
+For hardware and codec diagnostics from a Telnet shell, run:
+
+```sh
+/sdcard/test/v2/scripts/audio_probe.sh
+/sdcard/test/v2/scripts/audio_probe.sh --init
+```
+
+The `--init` form writes the codec registers using the firmware-provided
+`/usr/local/bin/set_audio.sh`. It does not start recording or alter RTSP
+behavior. Completing audio requires a standalone ARM AAC producer and an RTSP
+server with an AAC RTP track.
+
+The source for the next diagnostic is
+`sd/test/v2/audio/alsa_probe.c`. It tests `hw:0,0` and `hw:0,1` with
+`S16_LE` at 48 kHz for both mono and stereo, then reads one short PCM block.
+It must be cross-compiled against the camera's ARM userspace and
+`libasound.so.2` before being copied to the camera.
+
+The H21 probe accepted only `hw:0,0`, stereo, `S16_LE`, 48 kHz, and read 480
+frames successfully. Mono was rejected by ALSA with `EINVAL`; the dummy
+`hw:0,1` device is not part of the microphone path.
+
+### PCMA audio producer
+
+The first audio implementation is a standalone G.711 A-law producer:
+
+```sh
+make -C sd/test/v2/audio pcma_producer
+/sdcard/test/v2/audio/pcma_producer > /tmp/audio.pcma
+```
+
+It captures stereo `S16_LE` at 48 kHz from the confirmed `hw:0,0` ALSA device,
+downmixes to mono, decimates to 8 kHz, and writes raw PCMA at real-time speed.
+Each 160-byte block represents 20 ms and is directly suitable as an
+`PCMA/8000` RTP payload. The producer is intentionally not started by modified
+startup yet: the repository's existing RTSP server has no audio track or
+consumer for this stream. The next integration step is an RTSP server that
+reads 160-byte blocks and advertises `m=audio`, `a=rtpmap:8 PCMA/8000`.
+
+### Separate audio RTSP server
+
+`sd/test/v2/audio/audio_rtsp_server.c` provides a standalone audio-only RTSP
+server on TCP port `8555`. It captures the same H21 ALSA profile, packetizes
+PCMA as RTP/AVP payload type 8, and advertises:
+
+```text
+rtsp://<camera-ip>:8555/audio
+```
+
+The service is disabled by default. Build and copy
+`sd/test/v2/audio/audio_rtsp_server` to the camera, then set
+`YI_HACK_AUDIO_RTSP_SERVER=YES`. The existing video RTSP server remains
+unchanged. The initial implementation supports UDP RTP transport and one
+client; TCP-interleaved RTP and multi-client fan-out are intentionally left
+for follow-up work.
+
 ## Web interface
 
 With the example configuration, open:
@@ -276,14 +339,34 @@ test/
 
 ## TODO
 
-- Implement the audio pipeline:
-  - capture microphone audio through the camera's ALSA or stock shared-memory
-    path;
-  - produce AAC frames;
-  - extend or replace the v2 RTSP server with an AAC RTP track;
-  - expose a real `YI_HACK_AUDIO_SERVER` setting only after the pipeline is
-    functional;
-  - verify compatibility with go2rtc, Frigate, and common RTSP clients.
+- Improve the working audio pipeline:
+  - add a proper low-pass filter/resampler instead of simple six-to-one
+    decimation;
+  - complete ALSA recovery for all recoverable errors;
+  - support RTSP-over-TCP interleaved RTP;
+  - support multiple audio clients and robust RTSP session parsing;
+  - advertise the camera's actual IP address in SDP;
+  - add a service watchdog and clean shutdown handling;
+  - optionally support PCMU in addition to PCMA;
+  - evaluate AAC only if bandwidth or quality requirements justify it.
+- Add audio controls and features:
+  - audio level monitoring;
+  - mute controls;
+  - event-triggered recording;
+  - sound detection;
+  - investigate two-way audio if the camera speaker path is available.
+- Investigate IR and night vision safely:
+  - locate stock day/night and IR-cut control calls in `home.bin` and
+    `/home/web/ipc`;
+  - identify the IR-cut filter and illuminator interfaces;
+  - determine whether control uses GPIO, PWM, a kernel driver, or another
+    firmware device;
+  - add read-only day/night status detection first;
+  - add explicit `day`, `night`, and `auto` modes;
+  - expose `YI_HACK_NIGHT_MODE=AUTO` and web controls only after pin-level
+    behavior is verified;
+  - never toggle candidate GPIOs blindly because they may affect the sensor,
+    LEDs, Wi-Fi, or boot behavior.
 - Add authenticated web access or make the web UI read-only by default.
 - Add a lightweight RTSP/Wi-Fi watchdog with clear failure logging.
 - Add reproducible native builds for the camera's ARM userspace.
