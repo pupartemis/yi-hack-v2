@@ -162,10 +162,12 @@ interface is normally available at:
 
     http://<IP>:8080/
 
-It provides basic status information, a live JPEG snapshot, and an optional
-reboot action. It does not expose camera configuration or firmware-update
-operations. The camera firmware must provide a compatible `httpd` executable;
-startup reports an error in `/tmp/yi-hack-httpd.log` if it cannot find one.
+It provides automatically refreshed status information, load and memory
+visibility, video-service status, RTSP stream links, and a live JPEG snapshot.
+The reboot action is available only through an HTTP `POST` request. It does not
+expose camera configuration or firmware-update operations. The camera firmware
+must provide a compatible `httpd` executable; startup reports an error in
+`/tmp/yi-hack-httpd.log` if it cannot find one.
 
 
 I want more !
