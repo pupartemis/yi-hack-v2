@@ -367,6 +367,43 @@ test/
     behavior is verified;
   - never toggle candidate GPIOs blindly because they may affect the sensor,
     LEDs, Wi-Fi, or boot behavior.
+- Add the read-only `sd/test/v2/scripts/ir_probe.sh` to the diagnostic
+  deployment and use it to record the camera's current day/night interfaces.
+- Static recovery from the stock H21 IPC binary now identifies:
+  - IR illuminator brightness at `/sys/class/backlight/0.pwm_bl/brightness`,
+    with `max_brightness=255` on the test camera.
+  - IR-cut control through `/dev/emd` and ioctl `0x400464c9`
+    (`_IOW('d', 0xc9, 4)`).
+  - Stock IR-cut selector values `0x18` and `0x19`, driven in a
+    break-before-make sequence with approximately 150 ms between directions.
+  - The stock sensor input path
+    `/sys/devices/e8000000.apb/e801d000.adc/adcsys`.
+  - The `0x18` and `0x19` values are driver group selectors, not confirmed
+    physical GPIO numbers. Do not replace them with GPIO sysfs writes.
+- A temporary official-startup boot confirmed that `/home/web/ipc -w` owns
+  `/dev/emd`, ALSA capture, `ipc.config`, and a dedicated
+  `ivs_daynight_thr` thread. It also opened GPIO value nodes for 24, 25, 33,
+  38, 46, 92, and 100. The camera was restored to modified startup after the
+  check; no IR control was invoked.
+- The recovered illuminator path is implemented as the explicit helper
+  `sd/test/v2/scripts/ir_light.sh`. On the camera it supports `status`, `off`,
+  `on`, or a numeric brightness from `0` to `255`. It does not operate the
+  IR-cut filter and is not started automatically.
+- A standalone controller source is now under `sd/test/v2/ir/`. It supports
+  explicit `day` and `night` transitions through the recovered `/dev/emd`
+  ioctl and the PWM brightness path, with single-process locking and
+  break-before-make sequencing. `auto` is intentionally guarded by a
+  non-zero, caller-supplied sensor threshold and offset until the stock
+  sensor record is decoded. The controller is not enabled or deployed yet.
+- Optical IR-cut polarity testing is deferred. It requires a live video view,
+  Telnet recovery access, a one-shot test using only the recovered `/dev/emd`
+  ioctl, and an observable scene containing visible colors plus an IR source.
+  The test must keep the illuminator off, compare both candidate selector
+  values, and restore the original selector and brightness after each attempt.
+  An ioctl success alone does not identify day versus night polarity.
+- Automatic day/night mode remains disabled until the optical polarity and
+  sensor record format/threshold are verified. The controller's polarity
+  defaults are placeholders and must not be used for unattended operation.
 - Add authenticated web access or make the web UI read-only by default.
 - Add a lightweight RTSP/Wi-Fi watchdog with clear failure logging.
 - Add reproducible native builds for the camera's ARM userspace.

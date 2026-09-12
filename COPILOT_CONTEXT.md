@@ -328,6 +328,102 @@ safe implementation plan is:
 
 Candidate GPIO testing must be reversible and isolated because the pins may
    affect the sensor, status LEDs, Wi-Fi, or boot behavior.
+
+The first read-only IR probe is `sd/test/v2/scripts/ir_probe.sh`. Live
+inspection found:
+
+- Stock IPC strings for `app_hal_set_daynight_mode`, `set ircut`,
+  `EMI_setIRLightBrightness`, and `EMI_setGpioGroupVal`.
+- Stock configuration fields `lightmode`, `isdaymode`, and `daynightMode`.
+- GPIOs 33, 38, and 46 are already assigned to the red, blue, and green
+  status LEDs by the modified startup.
+- `/dev/amb_iris` and the platform `e8006000.ir` device exist, but neither has
+  yet been proven to control the IR illuminator.
+- No standalone IR-light command or exposed IR GPIO mapping has been found.
+
+The probe changes no hardware state. Actual day/night control remains blocked
+until the stock GPIO/PWM mapping is recovered from the stripped IPC path or
+verified through a controlled stock-runtime test.
+
+### Recovered stock IR mappings
+
+Static analysis of `/tmp/camera-ipc` recovered the following interfaces
+without invoking them:
+
+- `fcn.00319774` (`EMI_setIRLightBrightness`) formats the requested integer
+  as decimal text and writes it to
+  `/sys/class/backlight/0.pwm_bl/brightness`.
+- The live camera reports `max_brightness=255` and current brightness `0`.
+- `fcn.00319a8c` (`set ircut` path) opens `/dev/emd` and calls ioctl
+  `0x400464c9`, equivalent to `_IOW('d', 0xc9, 4)` under the Linux ioctl
+  encoding.
+- The ioctl argument buffer contains a selector word and a value byte. The
+  stock IR-cut sequence uses selector values `0x18` and `0x19`, changes them
+  in opposite directions, waits approximately 150 ms, and then clears both
+  selectors. This is a driver-level group interface; `0x18` and `0x19` must
+  not be treated as physical GPIO numbers.
+- The stock IR sensor reader opens
+  `/sys/devices/e8000000.apb/e801d000.adc/adcsys` and reads a fixed binary
+  record. The live file currently returns NUL bytes, so its value format and
+  day/night threshold remain unresolved.
+
+These findings are enough to build a carefully gated control helper, but not
+enough to claim the IR-cut polarity or sensor threshold. No recovered ioctl or
+PWM interface has been invoked by the modified firmware.
+
+### Temporary official-startup runtime check
+
+For one controlled reboot, `YI_HACK_STARTUP_MODE=OFFICIAL` was selected after
+backing up the live configuration and startup files under
+`/sdcard/test/logs/ir-stock/`. The stock stack came up with:
+
+- `/home/web/ipc -w` running alongside `/home/web/show_stack`;
+- an open `/dev/emd` descriptor;
+- an open `ipc.config` descriptor;
+- ALSA capture and playback descriptors;
+- a dedicated `ivs_daynight_thr` thread;
+- GPIO value descriptors for 24, 25, 33, 38, 46, 92, and 100.
+
+The official stack did not expose a standalone day/night command or a readable
+sensor value during this pass. The sensor sysfs node still returned NUL bytes,
+and the stored values remained `lightmode=0`, `isdaymode=0`, and
+`daynightMode=0`. The camera was restored to `YI_HACK_STARTUP_MODE=MODIFIED`
+and rebooted; the video RTSP server and separate audio RTSP server are
+running again.
+
+The recovered illuminator path is implemented in
+`sd/test/v2/scripts/ir_light.sh`. It reads the kernel-reported maximum,
+accepts `status`, `off`, `on`, or a numeric brightness, writes the validated
+value to `/sys/class/backlight/0.pwm_bl/brightness`, and verifies readback.
+It is intentionally manual and disabled from startup. It does not invoke the
+unresolved IR-cut ioctl or automatic day/night detection.
+
+The standalone controller implementation is in `sd/test/v2/ir/ir_controller.c`
+with a camera-compatible build file in `sd/test/v2/ir/Makefile`. It provides
+manual `day`, `night`, and guarded `auto` modes, validates the PWM range,
+serializes access with `/tmp/yi-hack-ir-controller.lock`, and uses the
+recovered `/dev/emd` ioctl sequence. Its day/night polarity defaults are
+placeholders (`day=0`, `night=1`) and must be corrected after the optical
+polarity test. AUTO refuses a zero threshold and is not suitable for use until
+the sensor record offset and threshold have been measured.
+
+### Deferred optical polarity test
+
+The optical polarity test is intentionally deferred. It requires:
+
+- a live video view and an active Telnet recovery path;
+- a one-shot utility that invokes only the recovered `/dev/emd` ioctl;
+- illuminator brightness forced to zero during the comparison;
+- a normally lit scene with visible colors and a separate IR source, such as
+  an IR remote or IR LED;
+- testing both candidate selector values and restoring the original selector
+  and brightness after each test.
+
+The test result must be based on the image response and IR visibility, not on
+ioctl success. The night position should remove the IR-cut filter and admit
+IR, while the day position should reject IR and preserve visible-light color.
+Until this test and sensor sampling are complete, the controller is not
+deployed, not started by modified startup, and AUTO mode must remain disabled.
 but the negotiated hardware parameters and PCM read are valid; the binary is
 not part of the runtime startup path.
 
