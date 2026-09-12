@@ -13,6 +13,8 @@
     .actions { margin: 1rem 0; }
     .muted { color: #666; font-size: .9rem; }
     .streams a { margin-right: 1rem; }
+    fieldset { margin: 1rem 0; }
+    label { display: block; margin: .5rem 0; }
   </style>
 </head>
 <body>
@@ -30,6 +32,30 @@
     <a id="mainStream" href="#" target="_blank">Main stream (stream1)</a>
     <a id="lowStream" href="#" target="_blank">Secondary stream (stream2)</a>
   </p>
+  <h2>Settings</h2>
+  <form action="cgi-bin/settings.sh" method="post">
+    <fieldset>
+      <legend>Startup services</legend>
+      <label><input type="checkbox" name="rtsp" value="YES" checked> RTSP server</label>
+      <label><input type="checkbox" name="http" value="YES" checked> Web interface after reboot</label>
+      <label><input type="checkbox" name="ftp" value="YES" checked> FTP server</label>
+      <label><input type="checkbox" name="telnet" value="YES" checked> Telnet server</label>
+      <p class="muted">Unchecked services are disabled. RTSP and HTTP changes apply after reboot; FTP and Telnet apply immediately.</p>
+    </fieldset>
+    <fieldset>
+      <legend>LEDs</legend>
+      <label>Red:
+        <select name="led_red"><option value="off">off</option><option value="on">on</option><option value="flash">flash</option></select>
+      </label>
+      <label>Green:
+        <select name="led_green"><option value="off">off</option><option value="on">on</option><option value="flash">flash</option></select>
+      </label>
+      <label>Blue:
+        <select name="led_blue"><option value="off">off</option><option value="on" selected>on</option><option value="flash">flash</option></select>
+      </label>
+    </fieldset>
+    <button type="submit">Save settings</button>
+  </form>
   <h2>Snapshot</h2>
   <p><button onclick="refreshSnapshot()">Capture now</button>
      <a id="download" href="#" download="yi-hack-snapshot.jpg">Download snapshot</a></p>
@@ -61,6 +87,18 @@
             alert(r.ok ? 'Reboot requested.' : 'Reboot failed (' + r.status + ').');
           });
       }
+      document.querySelector('form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var form = event.target;
+        var data = new URLSearchParams(new FormData(form));
+        ['rtsp', 'http', 'ftp', 'telnet'].forEach(function (name) {
+          if (!form.elements[name].checked) data.set(name, 'NO');
+        });
+        fetch(form.action, { method: 'POST', body: data })
+          .then(function (r) { return r.text().then(function (text) {
+            alert(r.ok ? text : 'Settings failed (' + r.status + '): ' + text);
+          }); });
+      });
     }
     var host = window.location.hostname;
     document.getElementById('mainStream').href = 'rtsp://' + host + '/stream1';

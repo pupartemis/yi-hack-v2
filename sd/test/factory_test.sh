@@ -22,6 +22,7 @@ if [ -f /sdcard/test/yi-hack-v2.cfg ]; then
             case "$key" in
                YI_HACK_STARTUP_MODE|YI_HACK_LANGUAGE|YI_HACK_TELNET_SERVER|\
                YI_HACK_FTP_SERVER|YI_HACK_HTTP_SERVER|YI_HACK_HTTP_PORT|\
+               YI_HACK_RTSP_SERVER|\
                YI_HACK_TIME_TIMEZONE|YI_HACK_TIME_FORMAT|YI_HACK_PROXY|\
                YI_HACK_NATIVE_TRACES)
                   export "$key=$value" ;;

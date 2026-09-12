@@ -164,10 +164,14 @@ interface is normally available at:
 
 It provides automatically refreshed status information, load and memory
 visibility, video-service status, RTSP stream links, and a live JPEG snapshot.
-The reboot action is available only through an HTTP `POST` request. It does not
-expose camera configuration or firmware-update operations. The camera firmware
-must provide a compatible `httpd` executable; startup reports an error in
-`/tmp/yi-hack-httpd.log` if it cannot find one.
+It also provides controls for the RTSP, HTTP, FTP, and Telnet services and the
+red, green, and blue LEDs. Service settings are saved to
+**test/yi-hack-v2.cfg**; FTP and Telnet changes apply immediately, while RTSP
+and HTTP startup changes apply after reboot. SSH is not available on this
+firmware because no SSH server is included. The reboot action is available
+only through an HTTP `POST` request. It does not expose firmware-update
+operations. The camera firmware must provide a compatible `httpd` executable;
+startup reports an error in `/tmp/yi-hack-httpd.log` if it cannot find one.
 
 
 I want more !
